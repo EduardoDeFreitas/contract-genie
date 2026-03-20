@@ -4,42 +4,8 @@ import { motion } from "framer-motion";
 import ContractUpload from "@/components/ContractUpload";
 import ContractResults, { type ContractData } from "@/components/ContractResults";
 import { Button } from "@/components/ui/button";
-
-const MOCK_RESULT: ContractData = {
-  objeto:
-    "Prestação de serviços de infraestrutura de TI, incluindo gerenciamento de servidores, monitoramento 24/7, manutenção preventiva e corretiva de ativos de rede, e suporte técnico remoto e presencial.",
-  partes: {
-    contratante: "Secretaria Municipal de Tecnologia — Prefeitura de São Paulo",
-    contratada: "TechNova Soluções Ltda. — CNPJ 12.345.678/0001-99",
-  },
-  numero_contrato: "CT-2024/00347",
-  vigencia: {
-    inicio: "01/03/2024",
-    fim: "28/02/2025",
-    renovacao: "Automática por até 60 meses",
-  },
-  valor: "R$ 2.847.360,00",
-  penalidades: [
-    "Multa de 2% sobre o valor mensal por descumprimento de SLA",
-    "Multa de 10% do valor global em caso de rescisão antecipada por culpa da contratada",
-    "Suspensão do direito de licitar por até 2 anos em caso de fraude",
-    "Advertência formal por atrasos de até 5 dias úteis",
-  ],
-  sla: [
-    "Tempo de resposta para incidentes críticos: até 30 minutos",
-    "Disponibilidade mínima dos serviços: 99,5% ao mês",
-    "Resolução de chamados nível 2: até 4 horas úteis",
-    "Relatório mensal de desempenho entregue até o 5º dia útil",
-  ],
-  requisitos: [
-    "Equipe mínima de 8 profissionais certificados (ITIL, CompTIA, AWS)",
-    "Ferramentas de monitoramento com dashboard em tempo real",
-    "Conformidade com LGPD e ISO 27001",
-    "Backup diário com retenção mínima de 90 dias",
-  ],
-  observacoes:
-    "Contrato firmado via pregão eletrônico nº 045/2024. Fiscalização a cargo do Departamento de Infraestrutura Digital. Vigência pode ser prorrogada conforme Art. 57 da Lei 8.666/93.",
-};
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
 
 const features = [
   {
@@ -63,12 +29,43 @@ const Index = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState<ContractData | null>(null);
 
-  const handleAnalyze = async (_file: File) => {
+  const handleAnalyze = async (file: File) => {
     setIsLoading(true);
-    // Simula análise — será substituído pela integração real com IA
-    await new Promise((r) => setTimeout(r, 2500));
-    setResult(MOCK_RESULT);
-    setIsLoading(false);
+    try {
+      // Read file as text
+      const text = await file.text();
+
+      if (text.trim().length < 50) {
+        toast.error("O arquivo parece estar vazio ou com pouco conteúdo.");
+        setIsLoading(false);
+        return;
+      }
+
+      const { data, error } = await supabase.functions.invoke("analyze-contract", {
+        body: { contractText: text },
+      });
+
+      if (error) {
+        console.error("Edge function error:", error);
+        toast.error("Erro ao analisar contrato. Tente novamente.");
+        setIsLoading(false);
+        return;
+      }
+
+      if (data?.error) {
+        toast.error(data.error);
+        setIsLoading(false);
+        return;
+      }
+
+      setResult(data as ContractData);
+      toast.success("Contrato analisado com sucesso!");
+    } catch (err) {
+      console.error("Analyze error:", err);
+      toast.error("Erro inesperado. Tente novamente.");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleReset = () => {
