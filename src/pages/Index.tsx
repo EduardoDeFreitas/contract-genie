@@ -131,8 +131,25 @@ const Index = () => {
               </p>
             </motion.div>
 
-            {/* Upload */}
-            <ContractUpload onAnalyze={handleAnalyze} isLoading={isLoading} />
+            {/* Upload / SysAid Tabs */}
+            <Tabs defaultValue="sysaid" className="w-full max-w-2xl mx-auto">
+              <TabsList className="grid w-full grid-cols-2 mb-6">
+                <TabsTrigger value="sysaid" className="gap-2">
+                  <Database className="w-4 h-4" />
+                  Importar do SysAid
+                </TabsTrigger>
+                <TabsTrigger value="upload" className="gap-2">
+                  <Upload className="w-4 h-4" />
+                  Upload de Arquivo
+                </TabsTrigger>
+              </TabsList>
+              <TabsContent value="sysaid">
+                <SysAidImport onSelectContract={handleSysAidSelect} isLoading={isLoading} />
+              </TabsContent>
+              <TabsContent value="upload">
+                <ContractUpload onAnalyze={handleAnalyze} isLoading={isLoading} />
+              </TabsContent>
+            </Tabs>
 
             {/* Features */}
             <motion.div
