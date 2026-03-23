@@ -1,9 +1,11 @@
 import { useState } from "react";
-import { FileText, Zap, Shield, Brain } from "lucide-react";
+import { FileText, Zap, Shield, Brain, Upload, Database } from "lucide-react";
 import { motion } from "framer-motion";
 import ContractUpload from "@/components/ContractUpload";
+import SysAidImport from "@/components/SysAidImport";
 import ContractResults, { type ContractData } from "@/components/ContractResults";
 import { Button } from "@/components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
