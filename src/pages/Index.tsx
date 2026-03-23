@@ -1,9 +1,11 @@
 import { useState } from "react";
-import { FileText, Zap, Shield, Brain } from "lucide-react";
+import { FileText, Zap, Shield, Brain, Upload, Database } from "lucide-react";
 import { motion } from "framer-motion";
 import ContractUpload from "@/components/ContractUpload";
+import SysAidImport from "@/components/SysAidImport";
 import ContractResults, { type ContractData } from "@/components/ContractResults";
 import { Button } from "@/components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
@@ -29,14 +31,11 @@ const Index = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState<ContractData | null>(null);
 
-  const handleAnalyze = async (file: File) => {
+  const analyzeText = async (text: string) => {
     setIsLoading(true);
     try {
-      // Read file as text
-      const text = await file.text();
-
       if (text.trim().length < 50) {
-        toast.error("O arquivo parece estar vazio ou com pouco conteúdo.");
+        toast.error("O conteúdo parece estar vazio ou com pouco conteúdo.");
         setIsLoading(false);
         return;
       }
@@ -66,6 +65,15 @@ const Index = () => {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleAnalyze = async (file: File) => {
+    const text = await file.text();
+    analyzeText(text);
+  };
+
+  const handleSysAidSelect = (contractText: string) => {
+    analyzeText(contractText);
   };
 
   const handleReset = () => {
@@ -123,8 +131,25 @@ const Index = () => {
               </p>
             </motion.div>
 
-            {/* Upload */}
-            <ContractUpload onAnalyze={handleAnalyze} isLoading={isLoading} />
+            {/* Upload / SysAid Tabs */}
+            <Tabs defaultValue="sysaid" className="w-full max-w-2xl mx-auto">
+              <TabsList className="grid w-full grid-cols-2 mb-6">
+                <TabsTrigger value="sysaid" className="gap-2">
+                  <Database className="w-4 h-4" />
+                  Importar do SysAid
+                </TabsTrigger>
+                <TabsTrigger value="upload" className="gap-2">
+                  <Upload className="w-4 h-4" />
+                  Upload de Arquivo
+                </TabsTrigger>
+              </TabsList>
+              <TabsContent value="sysaid">
+                <SysAidImport onSelectContract={handleSysAidSelect} isLoading={isLoading} />
+              </TabsContent>
+              <TabsContent value="upload">
+                <ContractUpload onAnalyze={handleAnalyze} isLoading={isLoading} />
+              </TabsContent>
+            </Tabs>
 
             {/* Features */}
             <motion.div
