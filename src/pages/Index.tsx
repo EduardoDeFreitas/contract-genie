@@ -31,14 +31,11 @@ const Index = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState<ContractData | null>(null);
 
-  const handleAnalyze = async (file: File) => {
+  const analyzeText = async (text: string) => {
     setIsLoading(true);
     try {
-      // Read file as text
-      const text = await file.text();
-
       if (text.trim().length < 50) {
-        toast.error("O arquivo parece estar vazio ou com pouco conteúdo.");
+        toast.error("O conteúdo parece estar vazio ou com pouco conteúdo.");
         setIsLoading(false);
         return;
       }
@@ -68,6 +65,15 @@ const Index = () => {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleAnalyze = async (file: File) => {
+    const text = await file.text();
+    analyzeText(text);
+  };
+
+  const handleSysAidSelect = (contractText: string) => {
+    analyzeText(contractText);
   };
 
   const handleReset = () => {
