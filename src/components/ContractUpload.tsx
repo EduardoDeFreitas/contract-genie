@@ -3,6 +3,13 @@ import { Upload, FileText, Loader2, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { motion, AnimatePresence } from "framer-motion";
 
+const ACCEPTED_TYPES = [
+  ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".csv", ".txt", ".rtf",
+  ".odt", ".ods", ".ppt", ".pptx", ".png", ".jpg", ".jpeg", ".webp", ".gif",
+];
+
+const ACCEPTED_MIME = ACCEPTED_TYPES.join(",");
+
 interface ContractUploadProps {
   onAnalyze: (file: File) => void;
   isLoading: boolean;
@@ -23,9 +30,7 @@ const ContractUpload = ({ onAnalyze, isLoading }: ContractUploadProps) => {
     e.stopPropagation();
     setDragActive(false);
     const file = e.dataTransfer.files?.[0];
-    if (file && (file.type === "application/pdf" || file.name.endsWith(".pdf") || file.name.endsWith(".docx"))) {
-      setSelectedFile(file);
-    }
+    if (file) setSelectedFile(file);
   }, []);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -113,13 +118,13 @@ const ContractUpload = ({ onAnalyze, isLoading }: ContractUploadProps) => {
                   Arraste o contrato aqui
                 </p>
                 <p className="text-sm text-muted-foreground mt-1">
-                  ou clique para selecionar — PDF ou DOCX
+                  PDF, Word, Excel, imagens e outros formatos
                 </p>
               </div>
               <input
                 type="file"
                 className="hidden"
-                accept=".pdf,.docx"
+                accept={ACCEPTED_MIME}
                 onChange={handleFileSelect}
               />
             </motion.label>

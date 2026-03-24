@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { FileText, Zap, Shield, Brain, Upload, Database } from "lucide-react";
+import { FileText, Zap, Shield, Brain, Upload, Database, Plus } from "lucide-react";
 import { motion } from "framer-motion";
 import ContractUpload from "@/components/ContractUpload";
 import SysAidImport from "@/components/SysAidImport";
@@ -15,6 +15,13 @@ import {
 } from "@/components/ui/resizable";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+
+interface AnalyzedContract {
+  id: number;
+  fileName: string;
+  text: string;
+  data: ContractData;
+}
 
 const features = [
   {
@@ -34,24 +41,56 @@ const features = [
   },
 ];
 
+const fileToBase64 = (file: File): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      resolve(result.split(",")[1]);
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+
+const readFileAsText = async (file: File): Promise<string> => {
+  const textTypes = ["text/plain", "text/csv", "text/rtf"];
+  if (textTypes.includes(file.type) || file.name.endsWith(".txt") || file.name.endsWith(".csv") || file.name.endsWith(".rtf")) {
+    return file.text();
+  }
+  return "";
+};
+
 const Index = () => {
   const [isLoading, setIsLoading] = useState(false);
-  const [result, setResult] = useState<ContractData | null>(null);
-  const [contractText, setContractText] = useState<string>("");
+  const [contracts, setContracts] = useState<AnalyzedContract[]>([]);
+  const [activeContractId, setActiveContractId] = useState<number | null>(null);
+  const [showUpload, setShowUpload] = useState(false);
+  let nextId = contracts.length > 0 ? Math.max(...contracts.map((c) => c.id)) + 1 : 1;
 
-  const analyzeText = async (text: string) => {
+  const activeContract = contracts.find((c) => c.id === activeContractId) || null;
+
+  const analyzeContract = async (text: string, fileName: string, fileBase64?: string, fileMimeType?: string) => {
     setIsLoading(true);
-    setContractText(text);
     try {
-      if (text.trim().length < 50) {
-        toast.error("O conteúdo parece estar vazio ou com pouco conteúdo.");
-        setIsLoading(false);
-        return;
+      const body: Record<string, string> = {};
+
+      // For PDFs and images, send as base64 for multimodal analysis
+      const multimodalTypes = ["application/pdf", "image/png", "image/jpeg", "image/webp", "image/gif"];
+      if (fileBase64 && fileMimeType && multimodalTypes.includes(fileMimeType)) {
+        body.fileBase64 = fileBase64;
+        body.fileName = fileName;
+        body.fileMimeType = fileMimeType;
+      } else {
+        if (text.trim().length < 20) {
+          toast.error("O conteúdo parece estar vazio ou com pouco conteúdo.");
+          setIsLoading(false);
+          return;
+        }
+        body.contractText = text;
+        body.fileName = fileName;
       }
 
-      const { data, error } = await supabase.functions.invoke("analyze-contract", {
-        body: { contractText: text },
-      });
+      const { data, error } = await supabase.functions.invoke("analyze-contract", { body });
 
       if (error) {
         console.error("Edge function error:", error);
@@ -66,7 +105,16 @@ const Index = () => {
         return;
       }
 
-      setResult(data as ContractData);
+      const newContract: AnalyzedContract = {
+        id: nextId,
+        fileName,
+        text: text || `[Arquivo: ${fileName}]`,
+        data: data as ContractData,
+      };
+
+      setContracts((prev) => [...prev, newContract]);
+      setActiveContractId(newContract.id);
+      setShowUpload(false);
       toast.success("Contrato analisado com sucesso!");
     } catch (err) {
       console.error("Analyze error:", err);
@@ -77,18 +125,26 @@ const Index = () => {
   };
 
   const handleAnalyze = async (file: File) => {
-    const text = await file.text();
-    analyzeText(text);
+    const textContent = await readFileAsText(file);
+    const base64 = await fileToBase64(file);
+    analyzeContract(textContent, file.name, base64, file.type);
   };
 
-  const handleSysAidSelect = (text: string) => {
-    analyzeText(text);
+  const handleSysAidSelect = (contractText: string) => {
+    analyzeContract(contractText, "SysAid CMDB");
   };
 
   const handleReset = () => {
-    setResult(null);
-    setContractText("");
+    setContracts([]);
+    setActiveContractId(null);
+    setShowUpload(false);
   };
+
+  const handleAddContract = () => {
+    setShowUpload(true);
+  };
+
+  const hasResults = contracts.length > 0 && !showUpload;
 
   return (
     <div className="h-screen flex flex-col bg-background dark">
@@ -103,21 +159,64 @@ const Index = () => {
               ContratoIA
             </span>
           </div>
-          {result && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleReset}
-              className="active:scale-[0.97] transition-transform"
-            >
-              Nova análise
-            </Button>
-          )}
+          <div className="flex items-center gap-2">
+            {hasResults && (
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleAddContract}
+                  className="gap-1.5 active:scale-[0.97] transition-transform"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  Adicionar contrato
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleReset}
+                  className="active:scale-[0.97] transition-transform text-muted-foreground"
+                >
+                  Limpar tudo
+                </Button>
+              </>
+            )}
+            {showUpload && contracts.length > 0 && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowUpload(false)}
+                className="active:scale-[0.97] transition-transform"
+              >
+                Voltar aos resultados
+              </Button>
+            )}
+          </div>
         </div>
       </nav>
 
+      {/* Contract tabs when multiple contracts */}
+      {hasResults && contracts.length > 1 && (
+        <div className="border-b border-border/40 bg-muted/20 shrink-0">
+          <div className="max-w-[1800px] mx-auto px-6 flex items-center gap-1 overflow-x-auto py-1.5">
+            {contracts.map((c) => (
+              <Button
+                key={c.id}
+                variant={c.id === activeContractId ? "secondary" : "ghost"}
+                size="sm"
+                onClick={() => setActiveContractId(c.id)}
+                className="gap-1.5 shrink-0 text-xs"
+              >
+                <FileText className="w-3 h-3" />
+                {c.fileName.length > 25 ? c.fileName.substring(0, 25) + "..." : c.fileName}
+              </Button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Content */}
-      {!result ? (
+      {!hasResults ? (
         <main className="flex-1 overflow-y-auto">
           <div className="max-w-6xl mx-auto px-6 py-12 space-y-16">
             {/* Hero */}
@@ -163,47 +262,49 @@ const Index = () => {
             </Tabs>
 
             {/* Features */}
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 0.3, duration: 0.6 }}
-              className="grid grid-cols-1 sm:grid-cols-3 gap-6 max-w-3xl mx-auto"
-            >
-              {features.map((f, i) => (
-                <motion.div
-                  key={f.title}
-                  initial={{ opacity: 0, y: 16, filter: "blur(4px)" }}
-                  animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
-                  transition={{
-                    delay: 0.4 + i * 0.1,
-                    duration: 0.5,
-                    ease: [0.16, 1, 0.3, 1],
-                  }}
-                  className="text-center"
-                >
-                  <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center mx-auto mb-3">
-                    <f.icon className="w-5 h-5 text-primary" />
-                  </div>
-                  <h3 className="text-sm font-semibold text-foreground mb-1">{f.title}</h3>
-                  <p className="text-xs text-muted-foreground leading-relaxed">{f.desc}</p>
-                </motion.div>
-              ))}
-            </motion.div>
+            {contracts.length === 0 && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 0.3, duration: 0.6 }}
+                className="grid grid-cols-1 sm:grid-cols-3 gap-6 max-w-3xl mx-auto"
+              >
+                {features.map((f, i) => (
+                  <motion.div
+                    key={f.title}
+                    initial={{ opacity: 0, y: 16, filter: "blur(4px)" }}
+                    animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
+                    transition={{
+                      delay: 0.4 + i * 0.1,
+                      duration: 0.5,
+                      ease: [0.16, 1, 0.3, 1],
+                    }}
+                    className="text-center"
+                  >
+                    <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center mx-auto mb-3">
+                      <f.icon className="w-5 h-5 text-primary" />
+                    </div>
+                    <h3 className="text-sm font-semibold text-foreground mb-1">{f.title}</h3>
+                    <p className="text-xs text-muted-foreground leading-relaxed">{f.desc}</p>
+                  </motion.div>
+                ))}
+              </motion.div>
+            )}
           </div>
         </main>
-      ) : (
+      ) : activeContract ? (
         <main className="flex-1 min-h-0 p-4">
           <ResizablePanelGroup direction="horizontal" className="h-full rounded-2xl">
             <ResizablePanel defaultSize={45} minSize={25}>
-              <ContractTextPanel text={contractText} />
+              <ContractTextPanel text={activeContract.text} />
             </ResizablePanel>
             <ResizableHandle withHandle />
             <ResizablePanel defaultSize={55} minSize={30}>
-              <ContractFormPanel data={result} />
+              <ContractFormPanel data={activeContract.data} />
             </ResizablePanel>
           </ResizablePanelGroup>
         </main>
-      )}
+      ) : null}
     </div>
   );
 };
