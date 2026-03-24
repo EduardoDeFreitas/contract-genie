@@ -3,9 +3,16 @@ import { FileText, Zap, Shield, Brain, Upload, Database } from "lucide-react";
 import { motion } from "framer-motion";
 import ContractUpload from "@/components/ContractUpload";
 import SysAidImport from "@/components/SysAidImport";
-import ContractResults, { type ContractData } from "@/components/ContractResults";
+import ContractTextPanel from "@/components/ContractTextPanel";
+import ContractFormPanel from "@/components/ContractFormPanel";
+import { type ContractData } from "@/components/ContractResults";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  ResizablePanelGroup,
+  ResizablePanel,
+  ResizableHandle,
+} from "@/components/ui/resizable";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
@@ -30,9 +37,11 @@ const features = [
 const Index = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState<ContractData | null>(null);
+  const [contractText, setContractText] = useState<string>("");
 
   const analyzeText = async (text: string) => {
     setIsLoading(true);
+    setContractText(text);
     try {
       if (text.trim().length < 50) {
         toast.error("O conteúdo parece estar vazio ou com pouco conteúdo.");
@@ -72,19 +81,20 @@ const Index = () => {
     analyzeText(text);
   };
 
-  const handleSysAidSelect = (contractText: string) => {
-    analyzeText(contractText);
+  const handleSysAidSelect = (text: string) => {
+    analyzeText(text);
   };
 
   const handleReset = () => {
     setResult(null);
+    setContractText("");
   };
 
   return (
-    <div className="min-h-screen bg-background dark">
+    <div className="h-screen flex flex-col bg-background dark">
       {/* Nav */}
-      <nav className="sticky top-0 z-50 border-b border-border/50 bg-background/80 backdrop-blur-md">
-        <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
+      <nav className="sticky top-0 z-50 border-b border-border/50 bg-background/80 backdrop-blur-md shrink-0">
+        <div className="max-w-[1800px] mx-auto px-6 h-14 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
               <FileText className="w-4 h-4 text-primary-foreground" />
@@ -106,9 +116,10 @@ const Index = () => {
         </div>
       </nav>
 
-      <main className="max-w-6xl mx-auto px-6 py-12">
-        {!result ? (
-          <div className="space-y-16">
+      {/* Content */}
+      {!result ? (
+        <main className="flex-1 overflow-y-auto">
+          <div className="max-w-6xl mx-auto px-6 py-12 space-y-16">
             {/* Hero */}
             <motion.div
               initial={{ opacity: 0, y: 24, filter: "blur(4px)" }}
@@ -179,10 +190,20 @@ const Index = () => {
               ))}
             </motion.div>
           </div>
-        ) : (
-          <ContractResults data={result} />
-        )}
-      </main>
+        </main>
+      ) : (
+        <main className="flex-1 min-h-0 p-4">
+          <ResizablePanelGroup direction="horizontal" className="h-full rounded-2xl">
+            <ResizablePanel defaultSize={45} minSize={25}>
+              <ContractTextPanel text={contractText} />
+            </ResizablePanel>
+            <ResizableHandle withHandle />
+            <ResizablePanel defaultSize={55} minSize={30}>
+              <ContractFormPanel data={result} />
+            </ResizablePanel>
+          </ResizablePanelGroup>
+        </main>
+      )}
     </div>
   );
 };
