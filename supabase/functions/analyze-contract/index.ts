@@ -6,13 +6,52 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-const SYSTEM_PROMPT = `Você é um especialista em análise de contratos brasileiros. O usuário vai enviar o texto de um contrato já firmado. Sua tarefa é extrair as informações estruturadas do contrato.
+const SYSTEM_PROMPT = `Você é um especialista em análise de contratos brasileiros. O usuário vai enviar o conteúdo de um contrato já firmado (pode ser texto extraído de PDF, DOCX, planilha, imagem ou qualquer formato). Sua tarefa é extrair as informações estruturadas do contrato.
 
 Regras:
 - Extraia APENAS informações que estão presentes no texto. Se algo não estiver disponível, use "Não especificado".
 - Seja preciso e objetivo.
 - Mantenha as citações fiéis ao texto original quando possível.
-- Para penalidades, SLA e requisitos, liste cada item separadamente.`;
+- Para penalidades, SLA e requisitos, liste cada item separadamente.
+- Se o conteúdo parecer ser de uma planilha, interprete as colunas e linhas como dados do contrato.`;
+
+const toolDefinition = {
+  type: "function",
+  function: {
+    name: "extract_contract_data",
+    description: "Extrai dados estruturados de um contrato",
+    parameters: {
+      type: "object",
+      properties: {
+        objeto: { type: "string", description: "Objetivo/objeto do contrato" },
+        partes: {
+          type: "object",
+          properties: {
+            contratante: { type: "string", description: "Nome/razão social do contratante" },
+            contratada: { type: "string", description: "Nome/razão social da contratada" },
+          },
+          required: ["contratante", "contratada"],
+        },
+        numero_contrato: { type: "string", description: "Número ou identificação do contrato" },
+        vigencia: {
+          type: "object",
+          properties: {
+            inicio: { type: "string", description: "Data de início" },
+            fim: { type: "string", description: "Data de término" },
+            renovacao: { type: "string", description: "Condições de renovação" },
+          },
+          required: ["inicio", "fim", "renovacao"],
+        },
+        valor: { type: "string", description: "Valor total do contrato formatado em reais" },
+        penalidades: { type: "array", items: { type: "string" }, description: "Lista de penalidades previstas" },
+        sla: { type: "array", items: { type: "string" }, description: "Lista de SLAs/níveis de serviço" },
+        requisitos: { type: "array", items: { type: "string" }, description: "Lista de requisitos técnicos ou operacionais" },
+        observacoes: { type: "string", description: "Observações adicionais relevantes" },
+      },
+      required: ["objeto", "partes", "numero_contrato", "vigencia", "valor", "penalidades", "sla", "requisitos", "observacoes"],
+    },
+  },
+};
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -25,16 +64,66 @@ serve(async (req) => {
       throw new Error("LOVABLE_API_KEY is not configured");
     }
 
-    const { contractText } = await req.json();
+    const body = await req.json();
+    const { contractText, fileBase64, fileName, fileMimeType } = body;
 
-    if (!contractText || typeof contractText !== "string" || contractText.trim().length < 50) {
+    // Build messages based on input type
+    const messages: Array<{ role: string; content: any }> = [
+      { role: "system", content: SYSTEM_PROMPT },
+    ];
+
+    if (fileBase64 && fileMimeType) {
+      // File-based analysis using multimodal
+      const supportedImageTypes = ["image/png", "image/jpeg", "image/webp", "image/gif"];
+      const supportedDocTypes = ["application/pdf"];
+
+      if (supportedImageTypes.includes(fileMimeType) || supportedDocTypes.includes(fileMimeType)) {
+        // Use multimodal: send file as inline data
+        messages.push({
+          role: "user",
+          content: [
+            {
+              type: "text",
+              text: `Analise o seguinte documento de contrato (${fileName || "arquivo"}) e extraia todas as informações estruturadas:`,
+            },
+            {
+              type: "image_url",
+              image_url: {
+                url: `data:${fileMimeType};base64,${fileBase64}`,
+              },
+            },
+          ],
+        });
+      } else {
+        // For other file types (docx, xlsx, etc.), the text was extracted client-side
+        if (!contractText || contractText.trim().length < 20) {
+          return new Response(
+            JSON.stringify({ error: "Não foi possível extrair texto deste arquivo. Tente um formato diferente." }),
+            { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+        messages.push({
+          role: "user",
+          content: `Analise o seguinte contrato (extraído de ${fileName || "arquivo"}):\n\n${contractText}`,
+        });
+      }
+    } else if (contractText) {
+      if (contractText.trim().length < 20) {
+        return new Response(
+          JSON.stringify({ error: "Texto do contrato muito curto ou inválido." }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      messages.push({
+        role: "user",
+        content: `Analise o seguinte contrato e extraia as informações:\n\n${contractText}`,
+      });
+    } else {
       return new Response(
-        JSON.stringify({ error: "Texto do contrato muito curto ou inválido." }),
+        JSON.stringify({ error: "Nenhum conteúdo de contrato fornecido." }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
-
-    const userPrompt = `Analise o seguinte contrato e extraia as informações:\n\n${contractText}`;
 
     const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
@@ -43,84 +132,9 @@ serve(async (req) => {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "google/gemini-3-flash-preview",
-        messages: [
-          { role: "system", content: SYSTEM_PROMPT },
-          { role: "user", content: userPrompt },
-        ],
-        tools: [
-          {
-            type: "function",
-            function: {
-              name: "extract_contract_data",
-              description: "Extrai dados estruturados de um contrato",
-              parameters: {
-                type: "object",
-                properties: {
-                  objeto: {
-                    type: "string",
-                    description: "Objetivo/objeto do contrato",
-                  },
-                  partes: {
-                    type: "object",
-                    properties: {
-                      contratante: { type: "string", description: "Nome/razão social do contratante" },
-                      contratada: { type: "string", description: "Nome/razão social da contratada" },
-                    },
-                    required: ["contratante", "contratada"],
-                  },
-                  numero_contrato: {
-                    type: "string",
-                    description: "Número ou identificação do contrato",
-                  },
-                  vigencia: {
-                    type: "object",
-                    properties: {
-                      inicio: { type: "string", description: "Data de início" },
-                      fim: { type: "string", description: "Data de término" },
-                      renovacao: { type: "string", description: "Condições de renovação" },
-                    },
-                    required: ["inicio", "fim", "renovacao"],
-                  },
-                  valor: {
-                    type: "string",
-                    description: "Valor total do contrato formatado em reais",
-                  },
-                  penalidades: {
-                    type: "array",
-                    items: { type: "string" },
-                    description: "Lista de penalidades previstas",
-                  },
-                  sla: {
-                    type: "array",
-                    items: { type: "string" },
-                    description: "Lista de SLAs/níveis de serviço",
-                  },
-                  requisitos: {
-                    type: "array",
-                    items: { type: "string" },
-                    description: "Lista de requisitos técnicos ou operacionais",
-                  },
-                  observacoes: {
-                    type: "string",
-                    description: "Observações adicionais relevantes",
-                  },
-                },
-                required: [
-                  "objeto",
-                  "partes",
-                  "numero_contrato",
-                  "vigencia",
-                  "valor",
-                  "penalidades",
-                  "sla",
-                  "requisitos",
-                  "observacoes",
-                ],
-              },
-            },
-          },
-        ],
+        model: "google/gemini-2.5-flash",
+        messages,
+        tools: [toolDefinition],
         tool_choice: { type: "function", function: { name: "extract_contract_data" } },
       }),
     });
